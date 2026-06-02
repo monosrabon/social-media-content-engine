@@ -1,0 +1,263 @@
+// ==============================================================
+// PRISMA SCHEMA — Social Media Content Engine
+// ==============================================================
+// This file defines your database structure.
+// After editing, run: npm run db:generate && npm run db:push
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==============================================================
+// ENUMS — named sets of allowed values
+// ==============================================================
+
+enum PostStatus {
+  DRAFT      // Saved but not published
+  SCHEDULED  // Will publish at a future date
+  PUBLISHED  // Live on social media
+  ARCHIVED   // Soft-deleted/hidden
+  FAILED     // Publishing failed
+}
+
+enum Platform {
+  TWITTER
+  INSTAGRAM
+  FACEBOOK
+  LINKEDIN
+  TIKTOK
+  YOUTUBE
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  GIF
+  DOCUMENT
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  REMINDER
+}
+
+enum ActivityType {
+  POST_CREATED
+  POST_PUBLISHED
+  POST_SCHEDULED
+  POST_DELETED
+  POST_EDITED
+  AI_GENERATED
+  MEDIA_UPLOADED
+  ANALYTICS_REPORT
+  USER_LOGIN
+  WORKFLOW_TRIGGERED
+}
+
+// ==============================================================
+// MODELS
+// ==============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // hashed with bcrypt
+  bio           String?
+  website       String?
+  timezone      String    @default("UTC")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // NextAuth.js relations
+  accounts      Account[]
+  sessions      Session[]
+
+  // App relations
+  posts         Post[]
+  contentIdeas  ContentIdea[]
+  media         Media[]
+  notifications Notification[]
+  activities    Activity[]
+  analytics     Analytics[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Post {
+  id            String     @id @default(cuid())
+  title         String
+  content       String     @db.Text
+  caption       String?    @db.Text  // AI-generated caption
+  hashtags      String[]              // array of hashtags
+  platforms     Platform[]            // which platforms to publish to
+  status        PostStatus @default(DRAFT)
+  scheduledAt   DateTime?             // when to publish (null = immediate)
+  publishedAt   DateTime?             // when it was actually published
+  contentScore  Int?                  // AI quality score 0-100
+  aiSummary     String?    @db.Text  // AI-generated summary
+  imageUrl      String?               // featured image
+  mediaIds      String[]              // linked media IDs
+  tags          String[]              // organizational tags
+  notes         String?    @db.Text  // internal notes
+  n8nWorkflowId String?               // tracks the n8n workflow run
+  userId        String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analytics  Analytics[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("posts")
+}
+
+model ContentIdea {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  platform    Platform?
+  category    String?
+  tags        String[]
+  used        Boolean  @default(false) // has this idea been turned into a post?
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("content_ideas")
+}
+
+model Media {
+  id          String    @id @default(cuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int       // bytes
+  url         String    // Supabase Storage URL
+  thumbnailUrl String?
+  mediaType   MediaType
+  alt         String?
+  tags        String[]
+  userId      String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("media")
+}
+
+model Analytics {
+  id          String   @id @default(cuid())
+  postId      String?
+  userId      String
+  platform    Platform
+  date        DateTime @default(now()) // the date this data is for
+  impressions Int      @default(0)
+  reach       Int      @default(0)
+  clicks      Int      @default(0)
+  likes       Int      @default(0)
+  comments    Int      @default(0)
+  shares      Int      @default(0)
+  saves       Int      @default(0)
+  engagementRate Float @default(0)   // (likes+comments+shares) / reach * 100
+  followerGrowth Int   @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  post Post? @relation(fields: [postId], references: [id], onDelete: SetNull)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([postId])
+  @@index([date])
+  @@map("analytics")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  title     String
+  message   String           @db.Text
+  type      NotificationType @default(INFO)
+  read      Boolean          @default(false)
+  actionUrl String?          // link to relevant page
+  userId    String
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@map("notifications")
+}
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  description String
+  metadata    Json?        // flexible extra data
+  userId      String
+  createdAt   DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("activities")
+}
