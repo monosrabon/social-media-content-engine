@@ -181,7 +181,7 @@ VALUES (
   'demo-user-001',
   'Demo User',
   'demo@contentengine.ai',
-  '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXig1oxlEfuq',
+  '$2a$12$lq4Zg29tf.1EtvmBbbUHNehEDmA/o0jVY21gwmgAxAD7EcCHbHDJa',
   'Social media manager and content creator.',
   'UTC',
   NOW(),
