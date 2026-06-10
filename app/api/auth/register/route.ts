@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const { data: user, error } = await supabase
       .from('users')
-      .insert({ name, email: email.toLowerCase(), password: hashedPassword })
+      .insert({ name, email: email.toLowerCase(), password: hashedPassword } as any)
       .select('id, name, email, createdAt')
       .single();
 

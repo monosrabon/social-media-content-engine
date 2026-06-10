@@ -23,4 +23,4 @@ export function getSupabase() {
   return _supabase;
 }
 
-export const supabase = getSupabase();
+export const supabase: any = getSupabase();

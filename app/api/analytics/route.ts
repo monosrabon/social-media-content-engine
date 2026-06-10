@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     if (platform) query = query.eq('platform', platform);
 
     const { data: analyticsRecords } = await query;
-    const records = analyticsRecords || [];
+    const records = (analyticsRecords || []) as any[];
 
     // Aggregate chart data by day
     const chartMap = new Map<string, Record<string, number>>();
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     }));
 
     const totals = records.reduce(
-      (acc, r) => ({
+      (acc: any, r: any) => ({
         impressions: acc.impressions + (r.impressions || 0),
         reach: acc.reach + (r.reach || 0),
         likes: acc.likes + (r.likes || 0),

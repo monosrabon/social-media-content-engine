@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
           platform,
           category: idea.contentType,
           tags: [niche.toLowerCase().replace(/\s+/g, '')],
-        }))
+        })) as any
       );
     }
 

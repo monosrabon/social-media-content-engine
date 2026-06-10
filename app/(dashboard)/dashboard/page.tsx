@@ -41,7 +41,8 @@ async function getDashboardData(userId: string) {
     supabase.from('analytics').select('date, impressions, reach, likes, engagementRate, followerGrowth').eq('userId', userId).gte('date', thirtyDaysAgo).order('date', { ascending: true }),
   ]);
 
-  const records = analyticsData || [];
+  type AnalyticsRow = { date: string; impressions: number; reach: number; likes: number; engagementRate: number; followerGrowth: number };
+  const records = (analyticsData || []) as AnalyticsRow[];
   const totals = records.reduce(
     (acc, r) => ({ impressions: acc.impressions + (r.impressions || 0), reach: acc.reach + (r.reach || 0), followerGrowth: acc.followerGrowth + (r.followerGrowth || 0), engagementSum: acc.engagementSum + (r.engagementRate || 0) }),
     { impressions: 0, reach: 0, followerGrowth: 0, engagementSum: 0 }
@@ -65,8 +66,8 @@ async function getDashboardData(userId: string) {
       avgEngagementRate: records.length > 0 ? parseFloat((totals.engagementSum / records.length).toFixed(2)) : 0,
       followerGrowth: totals.followerGrowth,
     },
-    recentPosts: recentPosts || [],
-    recentActivities: recentActivities || [],
+    recentPosts: (recentPosts || []) as any[],
+    recentActivities: (recentActivities || []) as any[],
     chartData: Array.from(chartMap.values()),
   };
 }

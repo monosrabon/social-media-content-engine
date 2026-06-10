@@ -32,7 +32,7 @@ export async function GET(_request: NextRequest) {
     ]);
 
     const totals = (analyticsData || []).reduce(
-      (acc, r) => ({
+      (acc: any, r: any) => ({
         impressions: acc.impressions + (r.impressions || 0),
         reach: acc.reach + (r.reach || 0),
         likes: acc.likes + (r.likes || 0),
