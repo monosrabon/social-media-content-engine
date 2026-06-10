@@ -25,6 +25,7 @@ import {
   Sparkles,
   Zap,
   ChevronRight,
+  Lightbulb,
 } from 'lucide-react';
 import { cn, getInitials } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -41,6 +42,7 @@ import {
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/content', label: 'Content', icon: FileText },
+  { href: '/content/ideas', label: 'Content Ideas', icon: Lightbulb, indent: true },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/media', label: 'Media', icon: Image },
@@ -84,25 +86,29 @@ export function Sidebar() {
           Main Menu
         </p>
         {navItems.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+          const isActive = pathname === item.href || (item.href !== '/content' && pathname.startsWith(item.href + '/'));
+          const isContentActive = item.href === '/content' && pathname === '/content';
+          const active = isActive || isContentActive;
           const Icon = item.icon;
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group',
-                isActive
+                'flex items-center gap-3 rounded-lg text-sm font-medium transition-all duration-150 group',
+                (item as any).indent ? 'px-3 py-2 ml-3 pl-6' : 'px-3 py-2.5',
+                active
                   ? 'bg-primary/10 text-primary'
                   : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
               )}
             >
               <Icon className={cn(
-                'w-4.5 h-4.5 flex-shrink-0 transition-colors',
-                isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'
+                'flex-shrink-0 transition-colors',
+                (item as any).indent ? 'w-4 h-4' : 'w-4.5 h-4.5',
+                active ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'
               )} />
               <span className="flex-1">{item.label}</span>
-              {isActive && (
+              {active && (
                 <ChevronRight className="w-3.5 h-3.5 text-primary" />
               )}
             </Link>
