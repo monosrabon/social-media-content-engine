@@ -1,17 +1,8 @@
-/**
- * Media Item API
- *
- * GET    /api/media/[id]  — Get single media item
- * PATCH  /api/media/[id]  — Update alt text / tags
- * DELETE /api/media/[id]  — Delete media item
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { supabase } from '@/lib/supabase-server';
 
-// Next.js 15: params is a Promise
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
@@ -20,9 +11,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
-    const item = await prisma.media.findFirst({
-      where: { id, userId: session.user.id },
-    });
+    const { data: item } = await supabase.from('media').select('*').eq('id', id).eq('userId', session.user.id).single();
     if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     return NextResponse.json({ data: item });
@@ -37,18 +26,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
-    const body = await req.json();
-    const { alt, tags } = body;
+    const { alt, tags } = await req.json();
 
-    const updated = await prisma.media.updateMany({
-      where: { id, userId: session.user.id },
-      data: {
-        ...(alt !== undefined ? { alt } : {}),
-        ...(tags !== undefined ? { tags } : {}),
-      },
-    });
+    const updates: Record<string, unknown> = {};
+    if (alt !== undefined) updates.alt = alt;
+    if (tags !== undefined) updates.tags = tags;
 
-    return NextResponse.json({ data: { updated: updated.count } });
+    await supabase.from('media').update(updates).eq('id', id).eq('userId', session.user.id);
+    return NextResponse.json({ data: { success: true } });
   } catch (error) {
     return NextResponse.json({ error: 'Failed' }, { status: 500 });
   }
@@ -60,12 +45,7 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
-    await prisma.media.deleteMany({
-      where: { id, userId: session.user.id },
-    });
-
-    // NOTE: In production, also delete from Supabase Storage here.
-
+    await supabase.from('media').delete().eq('id', id).eq('userId', session.user.id);
     return NextResponse.json({ data: { success: true } });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });

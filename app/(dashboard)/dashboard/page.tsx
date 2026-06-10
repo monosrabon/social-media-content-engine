@@ -7,93 +7,66 @@
 
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { supabase } from '@/lib/supabase-server';
 import { KPICards } from '@/components/dashboard/KPICards';
 import { RecentActivity } from '@/components/dashboard/RecentActivity';
 import { QuickActions } from '@/components/dashboard/QuickActions';
 import { EngagementChart } from '@/components/analytics/EngagementChart';
 import { PostCard } from '@/components/content/PostCard';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
 async function getDashboardData(userId: string) {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const [
-    totalPosts,
-    publishedPosts,
-    scheduledPosts,
-    draftPosts,
-    contentIdeas,
-    recentPosts,
-    recentActivities,
-    analyticsData,
-    analyticsAggregate,
+    { count: totalPosts },
+    { count: publishedPosts },
+    { count: scheduledPosts },
+    { count: draftPosts },
+    { count: contentIdeas },
+    { data: recentPosts },
+    { data: recentActivities },
+    { data: analyticsData },
   ] = await Promise.all([
-    prisma.post.count({ where: { userId } }),
-    prisma.post.count({ where: { userId, status: 'PUBLISHED' } }),
-    prisma.post.count({ where: { userId, status: 'SCHEDULED' } }),
-    prisma.post.count({ where: { userId, status: 'DRAFT' } }),
-    prisma.contentIdea.count({ where: { userId } }),
-    prisma.post.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 4,
-    }),
-    prisma.activity.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 8,
-    }),
-    prisma.analytics.findMany({
-      where: { userId, date: { gte: thirtyDaysAgo } },
-      orderBy: { date: 'asc' },
-      select: {
-        date: true,
-        impressions: true,
-        reach: true,
-        likes: true,
-        comments: true,
-        shares: true,
-        engagementRate: true,
-      },
-    }),
-    prisma.analytics.aggregate({
-      where: { userId, date: { gte: thirtyDaysAgo } },
-      _sum: { impressions: true, reach: true, followerGrowth: true },
-      _avg: { engagementRate: true },
-    }),
+    supabase.from('posts').select('*', { count: 'exact', head: true }).eq('userId', userId),
+    supabase.from('posts').select('*', { count: 'exact', head: true }).eq('userId', userId).eq('status', 'PUBLISHED'),
+    supabase.from('posts').select('*', { count: 'exact', head: true }).eq('userId', userId).eq('status', 'SCHEDULED'),
+    supabase.from('posts').select('*', { count: 'exact', head: true }).eq('userId', userId).eq('status', 'DRAFT'),
+    supabase.from('content_ideas').select('*', { count: 'exact', head: true }).eq('userId', userId),
+    supabase.from('posts').select('*').eq('userId', userId).order('createdAt', { ascending: false }).limit(4),
+    supabase.from('activities').select('*').eq('userId', userId).order('createdAt', { ascending: false }).limit(8),
+    supabase.from('analytics').select('date, impressions, reach, likes, engagementRate, followerGrowth').eq('userId', userId).gte('date', thirtyDaysAgo).order('date', { ascending: true }),
   ]);
 
-  // Group analytics by date
+  const records = analyticsData || [];
+  const totals = records.reduce(
+    (acc, r) => ({ impressions: acc.impressions + (r.impressions || 0), reach: acc.reach + (r.reach || 0), followerGrowth: acc.followerGrowth + (r.followerGrowth || 0), engagementSum: acc.engagementSum + (r.engagementRate || 0) }),
+    { impressions: 0, reach: 0, followerGrowth: 0, engagementSum: 0 }
+  );
+
   const chartMap = new Map<string, { date: string; impressions: number; reach: number; engagement: number; likes: number }>();
-  for (const r of analyticsData) {
-    const key = r.date.toISOString().split('T')[0];
+  for (const r of records) {
+    const key = r.date.split('T')[0];
     const ex = chartMap.get(key) || { date: key, impressions: 0, reach: 0, engagement: 0, likes: 0 };
-    chartMap.set(key, {
-      date: key,
-      impressions: ex.impressions + r.impressions,
-      reach: ex.reach + r.reach,
-      likes: ex.likes + r.likes,
-      engagement: parseFloat(((ex.engagement + r.engagementRate) / 2).toFixed(2)),
-    });
+    chartMap.set(key, { date: key, impressions: ex.impressions + (r.impressions || 0), reach: ex.reach + (r.reach || 0), likes: ex.likes + (r.likes || 0), engagement: parseFloat(((ex.engagement + (r.engagementRate || 0)) / 2).toFixed(2)) });
   }
 
   return {
     stats: {
-      totalPosts,
-      publishedPosts,
-      scheduledPosts,
-      draftPosts,
-      contentIdeas,
-      totalImpressions: analyticsAggregate._sum.impressions || 0,
-      avgEngagementRate: parseFloat((analyticsAggregate._avg.engagementRate || 0).toFixed(2)),
-      followerGrowth: analyticsAggregate._sum.followerGrowth || 0,
+      totalPosts: totalPosts || 0,
+      publishedPosts: publishedPosts || 0,
+      scheduledPosts: scheduledPosts || 0,
+      draftPosts: draftPosts || 0,
+      contentIdeas: contentIdeas || 0,
+      totalImpressions: totals.impressions,
+      avgEngagementRate: records.length > 0 ? parseFloat((totals.engagementSum / records.length).toFixed(2)) : 0,
+      followerGrowth: totals.followerGrowth,
     },
-    recentPosts,
-    recentActivities,
+    recentPosts: recentPosts || [],
+    recentActivities: recentActivities || [],
     chartData: Array.from(chartMap.values()),
   };
 }

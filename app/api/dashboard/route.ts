@@ -1,12 +1,7 @@
-/**
- * Dashboard Stats API
- * GET /api/dashboard
- */
-
 import { NextRequest } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { supabase } from '@/lib/supabase-server';
 
 export async function GET(_request: NextRequest) {
   try {
@@ -14,77 +9,63 @@ export async function GET(_request: NextRequest) {
     if (!session?.user?.id) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
     const userId = session.user.id;
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
     const [
-      totalPosts,
-      publishedPosts,
-      scheduledPosts,
-      draftPosts,
-      contentIdeas,
-      recentPosts,
-      recentActivities,
-      analytics,
+      { count: totalPosts },
+      { count: publishedPosts },
+      { count: scheduledPosts },
+      { count: draftPosts },
+      { count: contentIdeas },
+      { data: recentPosts },
+      { data: recentActivities },
+      { data: analyticsData },
     ] = await Promise.all([
-      prisma.post.count({ where: { userId } }),
-      prisma.post.count({ where: { userId, status: 'PUBLISHED' } }),
-      prisma.post.count({ where: { userId, status: 'SCHEDULED' } }),
-      prisma.post.count({ where: { userId, status: 'DRAFT' } }),
-      prisma.contentIdea.count({ where: { userId } }),
-      prisma.post.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        select: {
-          id: true,
-          title: true,
-          status: true,
-          platforms: true,
-          contentScore: true,
-          createdAt: true,
-          publishedAt: true,
-          scheduledAt: true,
-        },
-      }),
-      prisma.activity.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-      }),
-      prisma.analytics.aggregate({
-        where: { userId, date: { gte: thirtyDaysAgo } },
-        _sum: {
-          impressions: true,
-          reach: true,
-          likes: true,
-          followerGrowth: true,
-        },
-        _avg: {
-          engagementRate: true,
-        },
-      }),
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('userId', userId),
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('userId', userId).eq('status', 'PUBLISHED'),
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('userId', userId).eq('status', 'SCHEDULED'),
+      supabase.from('posts').select('*', { count: 'exact', head: true }).eq('userId', userId).eq('status', 'DRAFT'),
+      supabase.from('content_ideas').select('*', { count: 'exact', head: true }).eq('userId', userId),
+      supabase.from('posts').select('id, title, status, platforms, contentScore, createdAt, publishedAt, scheduledAt').eq('userId', userId).order('createdAt', { ascending: false }).limit(5),
+      supabase.from('activities').select('*').eq('userId', userId).order('createdAt', { ascending: false }).limit(10),
+      supabase.from('analytics').select('impressions, reach, likes, followerGrowth, engagementRate').eq('userId', userId).gte('date', thirtyDaysAgo),
     ]);
+
+    const totals = (analyticsData || []).reduce(
+      (acc, r) => ({
+        impressions: acc.impressions + (r.impressions || 0),
+        reach: acc.reach + (r.reach || 0),
+        likes: acc.likes + (r.likes || 0),
+        followerGrowth: acc.followerGrowth + (r.followerGrowth || 0),
+        engagementSum: acc.engagementSum + (r.engagementRate || 0),
+      }),
+      { impressions: 0, reach: 0, likes: 0, followerGrowth: 0, engagementSum: 0 }
+    );
+
+    const avgEngagementRate = analyticsData && analyticsData.length > 0
+      ? parseFloat((totals.engagementSum / analyticsData.length).toFixed(2))
+      : 0;
 
     return Response.json({
       data: {
         stats: {
-          totalPosts,
-          publishedPosts,
-          scheduledPosts,
-          draftPosts,
-          contentIdeas,
-          totalImpressions: analytics._sum.impressions || 0,
-          totalReach: analytics._sum.reach || 0,
-          totalLikes: analytics._sum.likes || 0,
-          avgEngagementRate: parseFloat((analytics._avg.engagementRate || 0).toFixed(2)),
-          followerGrowth: analytics._sum.followerGrowth || 0,
+          totalPosts: totalPosts || 0,
+          publishedPosts: publishedPosts || 0,
+          scheduledPosts: scheduledPosts || 0,
+          draftPosts: draftPosts || 0,
+          contentIdeas: contentIdeas || 0,
+          totalImpressions: totals.impressions,
+          totalReach: totals.reach,
+          totalLikes: totals.likes,
+          avgEngagementRate,
+          followerGrowth: totals.followerGrowth,
         },
-        recentPosts,
-        recentActivities,
+        recentPosts: recentPosts || [],
+        recentActivities: recentActivities || [],
       },
     });
   } catch (error) {
-    console.error('[GET /api/dashboard] Error:', error);
+    console.error('[GET /api/dashboard]', error);
     return Response.json({ error: 'Failed to fetch dashboard data' }, { status: 500 });
   }
 }
